@@ -23,14 +23,14 @@ Pg_cost     = [  10,   95,   50] # €/MWh    - Marginal cost
 Pg_nl_cost  = [   0,  500,  500] # €        - No-load cost
 Pg_Gen_lb   = [1800,  250,   75] # MW       - Power lower bound
 Pg_Gen_ub   = [1800,  500,  150] # MW       - Power upper bound
-Rg_max      = [   0,  200,    0] # MW       - FR provision
+Rg_max      = [   0,  185,   50] # MW       - FR provision
 Hg          = [   5,    5,    5] # s        - Inertia constant
-Tg          = 10                 # s        - FR delivery time
+Tg          = 5                  # s        - FR delivery time
 
 # Frecuency data
 f_0         = 50 # Hz
-Δf_max      = 0.5 # Hz
-Δfss_max    = 0.2 # Hz
+Δf_max      = 0.8 # Hz
+Δfss_max    = 0.5 # Hz
 
 # Power from Renewable Energy Source (RES)
 P_RES       = 40 *10^3 # MW (Max power installed)
@@ -49,7 +49,7 @@ Pd = 24 *10^3 # MW
 
 
 # Number of total generators
-G   = sum(N)
+G = sum(N)
 
 
 # Check if the length of all data are the same
@@ -118,9 +118,7 @@ set_silent(model)
 
 # Largest power infeed constraints
 @constraint(model, P_L <= P_L_max)
-for i in 1:G
-    @constraint(model, P_L >= Pg[i])
-end
+@constraint(model, [i in 1:G], Pg[i] <= P_L)
 
 
 # Equation 8: System inertia
@@ -131,14 +129,13 @@ end
 @constraint(model, Rs + sum(Rg) >= P_L - Δfss_max * D * Pd)
 
 # Equiation 13
-@constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max))
+# @constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max))
 
 # Equation 19
-# @constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max) - (P_L - Rs) * Tg * D * Pd / 4)
+@constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max) - (P_L - Rs) * Tg * D * Pd / 4)
 
 
 ########## Optimization ##########
-# relax_integrality(model)
 optimize!(model)
 
 
@@ -151,33 +148,32 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
     println("H / f_0 - Rs * Ts / (4*Δf_max) = ", round(value((Hg' * Pg_Gen_ub) / f_0 - Rs * Ts / (4*Δf_max)), digits = 3))
 
     # for i in 1:G
-    #     println("Rg del grupo de generador ", i, " = ", round(value(Rg[i]),digits = 3))
+    #     println("Rg del generador ", i, " = ", round(value(Rg[i]),digits = 3))
     # end
     println("RG = ", round(value(sum(Rg)), digits = 3))
 
-    println("\nDemanda = ", Pd)
+    println("\nDemand = ", Pd)
 
-    println("Potencia total generada = ", round(sum(value(Pg[i]) for i in 1:G), digits = 3))
+    println("Generated power = ", round(sum(value(Pg[i]) for i in 1:G), digits = 3))
 
-    println("Potencia RES = ", round(value(P_RES * cf_RES - P_curt), digits = 3))
-    println("P_curt = ", round(value(P_curt), digits = 3))
+    println("RES power supply = ", round(value(P_RES * cf_RES - P_curt), digits = 3))
+    println("Power curtailment = ", round(value(P_curt), digits = 3))
 
-    for i in 1:G
-        println("Potencia generador ", i, " : ", round(value(Pg[i]), digits = 3), " MW")
-    end
+    # for i in 1:G
+    #     println("Potencia generador ", i, " : ", round(value(Pg[i]), digits = 3), " MW")
+    # end
 
-    print(Pg_cost)
+    # print("\n", Hg, "\n\n")
+    
 
-    idx = cumsum([1; Ng[1:end-1]])
+    idx = cumsum([1; N[1:end-1]])
     for i in 1:length(N)
-        gen_idx = idx[i]:idx[i] + Ng[i] - 1
-        println("Nomber of generators of type ", i, " = ", sum(value(y[n]) for n in gen_idx))
+        gen_idx = idx[i]:idx[i] + N[i] - 1
+        println("\nNumber of generators of type $i = $(Int(sum(value(y[n]) for n in gen_idx)))")
+        println(" Power supplied by gen. type $i = $(round(sum(value(Pg[n]) for n in gen_idx), digits = 3)) MW")
     end
 
-    println("Total cost: ", round(objective_value(model), digits = 3))
-
-# elseif value(H / f_0 - Rs * Ts / (4*Δf_max)) < 0
-    # println("ERROR: La combinación de inercia 'H' y la respuesta rápida 'Rs' no es suficiente para cubrir la desviación de frecuencia")
+    println("Total cost = $(round(objective_value(model), digits = 3))")
 
 else
     println("ERROR: ", termination_status(model))
