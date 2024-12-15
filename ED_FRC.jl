@@ -25,7 +25,7 @@ Pg_Gen_lb   = [1800,  250,   75] # MW       - Power lower bound
 Pg_Gen_ub   = [1800,  500,  150] # MW       - Power upper bound
 Rg_max      = [   0,  185,   50] # MW       - FR provision
 Hg          = [   5,    5,    5] # s        - Inertia constant
-Tg          = 5                  # s        - FR delivery time
+Tg          = 8                  # s        - FR delivery time
 
 # Frecuency data
 f_0         = 50 # Hz
@@ -49,23 +49,15 @@ Pd = 24 *10^3 # MW
 
 
 # Number of total generators
-G = sum(N)
+# G = sum(N)
 
 
 # Check if the length of all data are the same
 if (length(Pg_cost) == length(Pg_nl_cost) == length(Pg_Gen_lb) == length(Pg_Gen_ub) == length(Rg_max) == length(Hg))
-    aux = length(Pg_cost)
+    gTypes = length(Pg_cost)
 else
     println("ERROR: Wrong data input")
 end
-
-# Generation of arrays
-Pg_cost = vcat([fill(Pg_cost[i], N[i]) for i in 1:aux]...)
-Pg_nl_cost = vcat([fill(Pg_nl_cost[i], N[i]) for i in 1:aux]...)
-Pg_Gen_lb = vcat([fill(Pg_Gen_lb[i], N[i]) for i in 1:aux]...)
-Pg_Gen_ub = vcat([fill(Pg_Gen_ub[i], N[i]) for i in 1:aux]...)
-Rg_max = vcat([fill(Rg_max[i], N[i]) for i in 1:aux]...)
-Hg = vcat([fill(Hg[i], N[i]) for i in 1:aux]...)
 
 
 ########## Model creation ##########
@@ -74,9 +66,9 @@ set_silent(model)
 
 
 ########## Variables ##########
-@variable(model, y[1:G], Bin) # on/off of each generator
-@variable(model, Pg[1:G]) # Power from each generator
-@variable(model, Rg[1:G]) # PRF from each generators
+@variable(model, Ng[1:gTypes], Int) # Number of generators of each gTypes
+@variable(model, Pg[1:gTypes]) # Power from each generator
+@variable(model, Rg[1:gTypes]) # PRF from each generators
 @variable(model, P_curt) # RES Power curtailment
 @variable(model, Rs) # EFR from BESS (Battery Energy Storage Systems)
 @variable(model, H) # System inertia
@@ -89,7 +81,7 @@ set_silent(model)
     # loadShedding = Power demand reduction for fullfilling the lack of power generation with high cost
 # Objetive without considering load shedding
 # @objective(model, Min, sum(Pg[n] * Pg_cost[n] for n in 1:G))
-@objective(model, Min, sum(y[n] * Pg_nl_cost[n] + Pg[n] * Pg_cost[n] for n in 1:G))
+@objective(model, Min, sum(Ng[n] * Pg_nl_cost[n] + Pg[n] * Pg_cost[n] for n in 1:gTypes))
 
 
 ########## Constraints ##########
@@ -97,17 +89,18 @@ set_silent(model)
 @constraint(model, sum(Pg) + P_RES * cf_RES - P_curt == Pd)
 
 # # Number of active generators of each group constraint
-# @constraint(model, [i in 1:G], 0 <= Ng[i])
-# @constraint(model, [i in 1:G], Ng[i] <= Ng[i])
+@constraint(model, [i in 1:gTypes], 0 <= Ng[i])
+@constraint(model, [i in 1:gTypes], Ng[i] <= N[i])
+@constraint(model, Ng[1] == N[1])
 
 # Power from each generator constraints
-@constraint(model, [i in 1:G], Pg_Gen_lb[i] * y[i] <= Pg[i])
-@constraint(model, [i in 1:G], Pg[i] <= Pg_Gen_ub[i] * y[i])
+@constraint(model, [i in 1:gTypes], Pg_Gen_lb[i] * Ng[i] <= Pg[i])
+@constraint(model, [i in 1:gTypes], Pg[i] <= Pg_Gen_ub[i] * Ng[i])
 
 # PRF provision from g constraints
-@constraint(model, [i in 1:G], 0 <= Rg[i])
-@constraint(model, [i in 1:G], Rg[i] <= y[i] * Rg_max[i])
-@constraint(model, [i in 1:G], Rg[i] <= Pg_Gen_ub[i] - Pg[i])
+@constraint(model, [i in 1:gTypes], 0 <= Rg[i])
+@constraint(model, [i in 1:gTypes], Rg[i] <= Rg_max[i] * Ng[i])
+@constraint(model, [i in 1:gTypes], Rg[i] <= Pg_Gen_ub[i] * Ng[i] - Pg[i])
 
 # EFR provision from RES constraints
 @constraint(model, 0 <= P_curt)
@@ -118,22 +111,27 @@ set_silent(model)
 
 # Largest power infeed constraints
 @constraint(model, P_L <= P_L_max)
-@constraint(model, [i in 1:G], Pg[i] <= P_L)
+@constraint(model, [i in 1:gTypes], Pg[i] / Ng[i] <= P_L)
 
 
 # Equation 8: System inertia
-@constraint(model, H == sum(Hg .* Pg_Gen_ub .* y))
+# @constraint(model, H == sum(Hg .* Pg_Gen_ub .* Ng) - P_L * 5) ##revisar: Aquí se ha introducido Hl como valor
+@constraint(model, H == sum(Hg .* Pg_Gen_ub .* Ng))
 
 # Equation 9
 # @constraint(model, (P_L - Rs - sum(Rg) / (D * Pd)) <= Δfss_max)
 @constraint(model, Rs + sum(Rg) >= P_L - Δfss_max * D * Pd)
 
 # Equiation 13
-# @constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max))
+@constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max))
+##revisar: Implementar un cono, llegar a "continuous convex" conic equation
+##revisar: al meter como cono y con valores binarios tiene que salir MISOCP
 
 # Equation 19
-@constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max) - (P_L - Rs) * Tg * D * Pd / 4)
+# @constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max) - (P_L - Rs) * Tg * D * Pd / 4)
+##revisar: si hay algun caso que gurobi no pueda resolver no convexidades y haya que acudir a Ipopt (con relajaciones de las variables enteras)
 
+##revisar: Boyd
 
 ########## Optimization ##########
 optimize!(model)
@@ -154,10 +152,10 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
 
     println("\nDemand = ", Pd)
 
-    println("Generated power = ", round(sum(value(Pg[i]) for i in 1:G), digits = 3))
+    println("Generated power = ", round(sum(value(Pg[i]) for i in 1:gTypes), digits = 3), " MW")
 
-    println("RES power supply = ", round(value(P_RES * cf_RES - P_curt), digits = 3))
-    println("Power curtailment = ", round(value(P_curt), digits = 3))
+    println("RES power supply = ", round(value(P_RES * cf_RES - P_curt), digits = 3), " MW")
+    println("RES accommodated = ", round(value(P_curt), digits = 3), " MW")
 
     # for i in 1:G
     #     println("Potencia generador ", i, " : ", round(value(Pg[i]), digits = 3), " MW")
@@ -167,13 +165,17 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
     
 
     idx = cumsum([1; N[1:end-1]])
-    for i in 1:length(N)
-        gen_idx = idx[i]:idx[i] + N[i] - 1
-        println("\nNumber of generators of type $i = $(Int(sum(value(y[n]) for n in gen_idx)))")
-        println(" Power supplied by gen. type $i = $(round(sum(value(Pg[n]) for n in gen_idx), digits = 3)) MW")
+    for i in 1:gTypes
+        println("")
+        println("Number of generators of type $i = $(Int(value(Ng[i])))")
+        println("Power supplied by gen. type $i  = $(round(value(Pg[i]), digits = 3)) MW")
+        println("PRF provision from gen units $i = $(round(value(Rg[i]), digits = 3)) MW")
+        println("Operation cost = $(round(value(Pg[i]) * Pg_cost[i] / 1000, digits = 3)) k€")
     end
-
-    println("Total cost = $(round(objective_value(model), digits = 3))")
+    println("")
+    println("Load infeed = ", round(value(P_L), digits = 3), " MW")
+    println("")
+    println("Total cost = $(round(objective_value(model), digits = 3)/1000) k€")
 
 else
     println("ERROR: ", termination_status(model))
