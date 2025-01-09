@@ -40,6 +40,7 @@ Ts          = 1 # s
 
 # Maximum power infeed
 P_L_max = maximum(Pg_Gen_ub)
+H_l = Hg[argmax(Pg_Gen_ub)]
 
 # Load damping
 D = 1.5 # %/Hz
@@ -62,7 +63,7 @@ end
 
 ########## Model creation ##########
 model = Model(Gurobi.Optimizer)
-set_silent(model)
+# set_silent(model)
 
 
 ########## Variables ##########
@@ -111,46 +112,53 @@ set_silent(model)
 
 # Largest power infeed constraints
 @constraint(model, P_L <= P_L_max)
-@constraint(model, [i in 1:gTypes], Pg[i] / Ng[i] <= P_L)
+# @constraint(model, [i in 1:gTypes], Pg[i] <= P_L * Ng[i])
+@variable(model, aux[1:gTypes])
+@constraint(model, [i in 1:gTypes], aux[i] >= 0 * Ng[i] + P_L * 0 - 0 * 0)
+@constraint(model, [i in 1:gTypes], aux[i] >= P_L_max * Ng[i] + P_L * N[i] - P_L_max * N[i])
+@constraint(model, [i in 1:gTypes], aux[i] <= 0 * Ng[i] + P_L * N[i] - 0 * N[i])
+@constraint(model, [i in 1:gTypes], aux[i] <= P_L_max * Ng[i] + P_L * 0 - P_L_max * 0)
+@constraint(model, [i in 1:gTypes], Pg[i] <= aux[i])
+
 
 
 # Equation 8: System inertia
-# @constraint(model, H == sum(Hg .* Pg_Gen_ub .* Ng) - P_L * 5) ##revisar: Aquí se ha introducido Hl como valor
-@constraint(model, H == sum(Hg .* Pg_Gen_ub .* Ng))
+@constraint(model, H == sum(Hg .* Pg_Gen_ub .* Ng) - P_L * H_l)
 
-# Equation 9
+# Equation 9: Quasi-steady-state security constraint
 # @constraint(model, (P_L - Rs - sum(Rg) / (D * Pd)) <= Δfss_max)
 @constraint(model, Rs + sum(Rg) >= P_L - Δfss_max * D * Pd)
 
-# Equiation 13
+# Equiation 13: Nadir constraint without load damping
 @constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max))
 ##revisar: Implementar un cono, llegar a "continuous convex" conic equation
 ##revisar: al meter como cono y con valores binarios tiene que salir MISOCP
 
-# Equation 19
+# Equation 19: Nadir constraint with load damping
 # @constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max) - (P_L - Rs) * Tg * D * Pd / 4)
 ##revisar: si hay algun caso que gurobi no pueda resolver no convexidades y haya que acudir a Ipopt (con relajaciones de las variables enteras)
 
 ##revisar: Boyd
-
+clearTerminal()
 ########## Optimization ##########
 optimize!(model)
 
 
 ########## Solution display ##########
-clearTerminal()
+# clearTerminal()
 
 if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_SOLVED
-    println("##### Solución encontrada #####")
-    println(termination_status(model))
+    println("\n\n##### $(termination_status(model)) solution found #####\n")
     println("H / f_0 - Rs * Ts / (4*Δf_max) = ", round(value((Hg' * Pg_Gen_ub) / f_0 - Rs * Ts / (4*Δf_max)), digits = 3))
 
     # for i in 1:G
     #     println("Rg del generador ", i, " = ", round(value(Rg[i]),digits = 3))
     # end
     println("RG = ", round(value(sum(Rg)), digits = 3))
+    println("Rs = ", round(value(Rs), digits = 3))
+    println("P_L - Δfss_max * D * Pd = ", round(value(P_L - Δfss_max * D * Pd), digits = 3))
 
-    println("\nDemand = ", Pd)
+    println("\nDemand = ", Pd, " MW")
 
     println("Generated power = ", round(sum(value(Pg[i]) for i in 1:gTypes), digits = 3), " MW")
 
