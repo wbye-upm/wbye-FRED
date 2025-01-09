@@ -113,12 +113,7 @@ model = Model(Gurobi.Optimizer)
 
 # Largest power infeed constraints
 @constraint(model, P_L <= P_L_max)
-# @constraint(model, [i in 1:gTypes], Pg[i] <= P_L * Ng[i])
-@variable(model, aux[1:gTypes])
-@constraint(model, [i in 1:gTypes], aux[i] >= 0 * Ng[i] + P_L * 0 - 0 * 0)
-@constraint(model, [i in 1:gTypes], aux[i] >= P_L_max * Ng[i] + P_L * N[i] - P_L_max * N[i])
-@constraint(model, [i in 1:gTypes], aux[i] <= 0 * Ng[i] + P_L * N[i] - 0 * N[i])
-@constraint(model, [i in 1:gTypes], aux[i] <= P_L_max * Ng[i] + P_L * 0 - P_L_max * 0)
+@constraint(model, [i in 1:gTypes], Pg[i] <= P_L * Ng[i])
 
 
 # Equation 8: System inertia
@@ -154,7 +149,9 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
     # end
     println("RG = ", round(value(sum(Rg)), digits = 3))
     println("Rs = ", round(value(Rs), digits = 3))
-    println("P_L - Δfss_max * D * Pd = ", round(value(P_L - Δfss_max * D * Pd), digits = 3))
+    println("P_L= ", round(value(P_L), digits = 3))
+    println("-Δfss_max * D * Pd = ", round(value(- Δfss_max * D * Pd), digits = 3))
+
 
     println("\nDemand = ", Pd, " MW")
 
