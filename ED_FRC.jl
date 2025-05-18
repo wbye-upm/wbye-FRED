@@ -39,6 +39,9 @@ Hg          = [   5,    5,    5] # s        - Inertia constant
 
 Tg          = 8                  # s        - FR delivery time
 
+# Value of Lost Load (VoLL)
+VoLL = 25000 # €/MWh
+
 # Frecuency data
 f_0         = 50 # Hz
 Δf_max      = 0.8 # Hz
@@ -58,7 +61,7 @@ H_l = Hg[argmax(Pg_Gen_ub)]
 D = 1.5 *10^-2 # %/Hz
 
 # Total of power demand
-Pd = 150 *10^3 # MW
+Pd = 28 *10^3 # MW
 
 
 # Check if the length of all data are the same
@@ -70,27 +73,27 @@ end
 
 
 ########## Model creation ##########
-model = Model(SCS.Optimizer)
+model = Model(Gurobi.Optimizer)
+set_optimizer_attribute(model, "OutputFlag", 0)
 
 
 ########## Variables ##########
-@variable(model, Ng[1:gTypes]) # Number of generators of each gTypes
+@variable(model, Ng[1:gTypes], Int) # Number of generators of each gTypes
 @variable(model, Pg[1:gTypes]) # Power from each generator
 @variable(model, Rg[1:gTypes]) # PRF from each generators
 @variable(model, P_curt) # RES Power curtailment
 @variable(model, Rs) # EFR from BESS (Battery Energy Storage Systems)
 @variable(model, H) # System inertia
 @variable(model, P_L) # Power infeed
+@variable(model, Dshed >= 0) # Demand shedding
 
 
 ########## Objective ##########
-@objective(model, Min, sum(Ng[n] * Pg_nl_cost[n] + Pg[n] * Pg_cost[n] for n in 1:gTypes))
-# Agregar demand shedding
+@objective(model, Min, sum(Ng[n] * Pg_nl_cost[n] + Pg[n] * Pg_cost[n] for n in 1:gTypes) + VoLL * Dshed)
 
 
 ########## Constraints ##########
-@constraint(model, sum(Pg) + P_RES * cf_RES - P_curt == Pd)
-### Agregar load shedding VoLL * Dshed
+@constraint(model, sum(Pg) + P_RES * cf_RES - P_curt == Pd - Dshed)
 
 # Number of active generators of each group constraint
 @constraint(model, [i in 1:gTypes], 0 <= Ng[i])
@@ -115,15 +118,15 @@ model = Model(SCS.Optimizer)
 
 # Largest power infeed constraints
 @constraint(model, P_L <= P_L_max)
+@constraint(model, [i in 1:gTypes], Pg[i] <= P_L * Ng[i])
 
-# @constraint(model, [i in 1:gTypes], Pg[i] <= P_L * Ng[i])
 # McCormick relaxation
-@variable(model, aux[1:gTypes])
-@constraint(model, [i in 1:gTypes], aux[i] >= 0)                                                # (0 * Ng[i] + P_L * 0 - 0 * 0)
-@constraint(model, [i in 1:gTypes], aux[i] >= P_L_max * Ng[i] + P_L * N[i] - P_L_max * N[i])
-@constraint(model, [i in 1:gTypes], aux[i] <= P_L * N[i])                                       # (0 * Ng[i] + P_L * N[i] - 0 * N[i])
-@constraint(model, [i in 1:gTypes], aux[i] <= P_L_max * Ng[i])                                  # (P_L_max * Ng[i] + P_L * 0 - P_L_max * 0)
-@constraint(model, [i in 1:gTypes], Pg[i] <= aux[i])
+# @variable(model, aux[1:gTypes])
+# @constraint(model, [i in 1:gTypes], aux[i] >= 0)                                                # (0 * Ng[i] + P_L * 0 - 0 * 0)
+# @constraint(model, [i in 1:gTypes], aux[i] >= P_L_max * Ng[i] + P_L * N[i] - P_L_max * N[i])
+# @constraint(model, [i in 1:gTypes], aux[i] <= P_L * N[i])                                       # (0 * Ng[i] + P_L * N[i] - 0 * N[i])
+# @constraint(model, [i in 1:gTypes], aux[i] <= P_L_max * Ng[i])                                  # (P_L_max * Ng[i] + P_L * 0 - P_L_max * 0)
+# @constraint(model, [i in 1:gTypes], Pg[i] <= aux[i])
 
 
 # Equation 8: System inertia
@@ -147,12 +150,12 @@ model = Model(SCS.Optimizer)
 
 
 # Auxiliar variables
-@variable(model, x[1:5, 1])
-@constraint(model, x[1,1] == H/f_0 - Rs * Ts / (4*Δf_max))
-@constraint(model, x[2,1] == sum(Rg) / Tg)
-@constraint(model, x[3,1] == (P_L - Rs) / sqrt(4*Δf_max))
-@constraint(model, x[4,1] == D * Pd)
-@constraint(model, x[5,1] == (P_L - Rs) / 4)
+@variable(model, x[1:5])
+@constraint(model, x[1] == H/f_0 - Rs * Ts / (4*Δf_max))
+@constraint(model, x[2] == sum(Rg) / Tg)
+@constraint(model, x[3] == (P_L - Rs) / sqrt(4*Δf_max))
+@constraint(model, x[4] == D * Pd)
+@constraint(model, x[5] == (P_L - Rs) / 4)
 
 
 # Equiation 13: Nadir constraint without load damping using RotatedSecondOrderCone()
@@ -165,11 +168,11 @@ model = Model(SCS.Optimizer)
 @variable(model, t >= 0)
 # x1*x2 >= x3^2 - x5*x4
 # x1*x2 = s^2
-@constraint(model, [x[1,1]/2, x[2,1], s] in RotatedSecondOrderCone())
+@constraint(model, [x[1]/2, x[2], s] in RotatedSecondOrderCone())
 # x5*x4 = t^2
-@constraint(model, [x[5,1]/2, x[2,1], t] in RotatedSecondOrderCone())
+@constraint(model, [x[5]/2, x[2], t] in RotatedSecondOrderCone())
 # s^2 >= x3^2 - t^2 -----> s^2 + t^2 >= x3^2
-@constraint(model,[s, t, x[3,1]] in RotatedSecondOrderCone())
+@constraint(model,[s, t, x[3]] in RotatedSecondOrderCone())
 
 
 clearTerminal()
@@ -182,21 +185,12 @@ optimize!(model)
 println("Capacidad = $(sum(Pg_Gen_ub[n] for n in 1:gTypes))")
 if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_SOLVED
     println("\n\n##### $(termination_status(model)) solution found #####\n")
-    println("H / f_0 - Rs * Ts / (4*Δf_max) = ", round(value((Hg' * Pg_Gen_ub) / f_0 - Rs * Ts / (4*Δf_max)), digits = 3))
-
-    # for i in 1:G
-    #     println("Rg del generador ", i, " = ", round(value(Rg[i]),digits = 3))
-    # end
-    println("RG = ", round(value(sum(Rg)), digits = 3))
-    println("Rs = ", round(value(Rs), digits = 3))
-    println("P_L - Δfss_max * D * Pd = ", round(value(P_L - Δfss_max * D * Pd), digits = 3))
 
     println("\nDemand = ", Pd, " MW")
-
     println("Generated power = ", round(sum(value(Pg[i]) for i in 1:gTypes), digits = 3), " MW")
-
     println("RES power supply = ", round(value(P_RES * cf_RES - P_curt), digits = 3), " MW")
     println("RES accommodated = ", round(value(P_curt), digits = 2), " MW")
+    println("Demmand shedding = ", round(value(Dshed), digits = 2), " MW")
     
 
     # idx = cumsum([1; N[1:end-1]])
