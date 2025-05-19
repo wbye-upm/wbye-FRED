@@ -31,7 +31,7 @@ end
 
 N           = [   1,   30,   30] #          - Number of units
 Pg_cost     = [  10,   95,   50] # €/MWh    - Marginal cost
-Pg_nl_cost  = [   0,  500,  500] # €        - No-load cost
+Pg_nl_cost  = [   0,  450,  500] # €        - No-load cost
 Pg_Gen_lb   = [1800,  250,   75] # MW       - Power lower bound
 Pg_Gen_ub   = [1800,  500,  150] # MW       - Power upper bound
 Rg_max      = [   0,  185,   50] # MW       - FR provision
@@ -49,7 +49,8 @@ f_0         = 50 # Hz
 
 # Power from Renewable Energy Source (RES)
 P_RES       = 40 *10^3 # MW (Max power installed)
-cf_RES      = 0.25 # Capacity factor of RES (<= 1)
+# Capacity factor of RES (<= 1)
+cf_RES      = [25, 25, 25, 25] ./ 100
 Rs_ub       = 0 # MW (EFR)
 Ts          = 1 # s
 
@@ -61,8 +62,10 @@ H_l = Hg[argmax(Pg_Gen_ub)]
 D = 1.5 *10^-2 # %/Hz
 
 # Total of power demand
-Pd = 28 *10^3 # MW
+Pd = [15, 30] .*10^3 # MW
 
+# Number of periods
+T = length(Pd)
 
 # Check if the length of all data are the same
 if (length(Pg_cost) == length(Pg_nl_cost) == length(Pg_Gen_lb) == length(Pg_Gen_ub) == length(Rg_max) == length(Hg))
@@ -78,48 +81,46 @@ set_optimizer_attribute(model, "OutputFlag", 0)
 
 
 ########## Variables ##########
-@variable(model, Ng[1:gTypes], Int) # Number of generators of each gTypes
-@variable(model, Pg[1:gTypes]) # Power from each generator
-@variable(model, Rg[1:gTypes]) # PRF from each generators
-@variable(model, P_curt) # RES Power curtailment
-@variable(model, Rs) # EFR from BESS (Battery Energy Storage Systems)
-@variable(model, H) # System inertia
-@variable(model, P_L) # Power infeed
-@variable(model, Dshed >= 0) # Demand shedding
+@variable(model, Ng[1:gTypes, 1:T], Int) # Number of generators of each gTypes
+@variable(model, Pg[1:gTypes, 1:T]) # Power from each generator
+@variable(model, Rg[1:gTypes, 1:T]) # PRF from each generators
+@variable(model, P_curt[1:T]) # RES Power curtailment
+@variable(model, Rs[1:T]) # EFR from BESS (Battery Energy Storage Systems)
+@variable(model, H[1:T]) # System inertia
+@variable(model, P_L[1:T]) # Power infeed
+@variable(model, Dshed[1:T] >= 0) # Demand shedding
 
 
 ########## Objective ##########
-@objective(model, Min, sum(Ng[n] * Pg_nl_cost[n] + Pg[n] * Pg_cost[n] for n in 1:gTypes) + VoLL * Dshed)
-
+@objective(model, Min, sum(Ng[g, t] * Pg_nl_cost[g] + Pg[g, t] * Pg_cost[g] for g in 1:gTypes, t in 1:T) + sum(VoLL * Dshed[t] for t in 1:T))
 
 ########## Constraints ##########
-@constraint(model, sum(Pg) + P_RES * cf_RES - P_curt == Pd - Dshed)
+@constraint(model, [t in 1:T], sum(Pg[g, t] for g in 1:gTypes) + P_RES * cf_RES[t] - P_curt[t] == Pd[t] - Dshed[t])
 
 # Number of active generators of each group constraint
-@constraint(model, [i in 1:gTypes], 0 <= Ng[i])
-@constraint(model, [i in 1:gTypes], Ng[i] <= N[i])
-@constraint(model, Ng[1] == N[1])
+@constraint(model, [g in 1:gTypes, t in 1:T], Ng[g, t] >= 0)
+@constraint(model, [g in 1:gTypes, t in 1:T], Ng[g, t] <= N[g])
+@constraint(model, [t in 1:T], Ng[1, t] == N[1])
 
 # Power from each generator constraints
-@constraint(model, [i in 1:gTypes], Pg_Gen_lb[i] * Ng[i] <= Pg[i])
-@constraint(model, [i in 1:gTypes], Pg[i] <= Pg_Gen_ub[i] * Ng[i])
+@constraint(model, [g in 1:gTypes, t in 1:T], Pg[g, t] >= Pg_Gen_lb[g] * Ng[g, t])
+@constraint(model, [g in 1:gTypes, t in 1:T], Pg[g, t] <= Pg_Gen_ub[g] * Ng[g, t])
 
 # PRF provision from g constraints
-@constraint(model, [i in 1:gTypes], 0 <= Rg[i])
-@constraint(model, [i in 1:gTypes], Rg[i] <= Rg_max[i] * Ng[i])
-@constraint(model, [i in 1:gTypes], Rg[i] <= Pg_Gen_ub[i] * Ng[i] - Pg[i])
+@constraint(model, [g in 1:gTypes, t in 1:T], Rg[g, t] >= 0)
+@constraint(model, [g in 1:gTypes, t in 1:T], Rg[g, t] <= Rg_max[g] * Ng[g, t])
+@constraint(model, [g in 1:gTypes, t in 1:T], Rg[g, t] <= Pg_Gen_ub[g] * Ng[g, t] - Pg[g, t])
 
 # EFR provision from RES constraints
-@constraint(model, 0 <= P_curt)
-@constraint(model, P_curt <= P_RES * cf_RES)
-@constraint(model, 0 <= Rs) # Rs (storage)
-@constraint(model, Rs <= Rs_ub)
+@constraint(model, [t in 1:T], P_curt[t] >= 0)
+@constraint(model, [t in 1:T], P_curt[t] <= P_RES * cf_RES[t])
+@constraint(model, [t in 1:T], Rs[t] >= 0) # Rs (storage)
+@constraint(model, [t in 1:T], Rs[t] <= Rs_ub)
 
 
 # Largest power infeed constraints
-@constraint(model, P_L <= P_L_max)
-@constraint(model, [i in 1:gTypes], Pg[i] <= P_L * Ng[i])
-
+@constraint(model, [t in 1:T], P_L[t] <= P_L_max)
+@constraint(model, [g in 1:gTypes, t in 1:T], Pg[g, t] <= P_L[t] * Ng[g, t])
 # McCormick relaxation
 # @variable(model, aux[1:gTypes])
 # @constraint(model, [i in 1:gTypes], aux[i] >= 0)                                                # (0 * Ng[i] + P_L * 0 - 0 * 0)
@@ -130,10 +131,10 @@ set_optimizer_attribute(model, "OutputFlag", 0)
 
 
 # Equation 8: System inertia
-@constraint(model, H == sum(Hg .* Pg_Gen_ub .* Ng) - P_L * H_l)
+@constraint(model, [t in 1:T], H[t] == sum(Hg[g] * Pg_Gen_ub[g] * Ng[g, t] for g in 1:gTypes) - P_L[t] * H_l)
 
 # Equation 9: Quasi-steady-state security constraint
-@constraint(model, Rs + sum(Rg) >= P_L - Δfss_max * D * Pd)
+@constraint(model, [t in 1:T], Rs[t] + sum(Rg[g, t] for g in 1:gTypes) >= P_L[t] - Δfss_max * D * Pd[t])
 
 # Equiation 13: Nadir constraint without load damping
 # @constraint(model, (H / f_0 - Rs * Ts / (4*Δf_max)) * sum(Rg) >= (P_L - Rs)^2 * Tg / (4*Δf_max))
@@ -150,12 +151,12 @@ set_optimizer_attribute(model, "OutputFlag", 0)
 
 
 # Auxiliar variables
-@variable(model, x[1:5])
-@constraint(model, x[1] == H/f_0 - Rs * Ts / (4*Δf_max))
-@constraint(model, x[2] == sum(Rg) / Tg)
-@constraint(model, x[3] == (P_L - Rs) / sqrt(4*Δf_max))
-@constraint(model, x[4] == D * Pd)
-@constraint(model, x[5] == (P_L - Rs) / 4)
+@variable(model, x[1:5, 1:T])
+@constraint(model, [t in 1:T], x[1, t] == H[t]/f_0 - Rs[t] * Ts / (4*Δf_max))
+@constraint(model, [t in 1:T], x[2, t] == sum(Rg[g, t] for g in 1:gTypes) / Tg)
+@constraint(model, [t in 1:T], x[3, t] == (P_L[t] - Rs[t]) / sqrt(4*Δf_max))
+@constraint(model, [t in 1:T], x[4, t] == D * Pd[t])
+@constraint(model, [t in 1:T], x[5, t] == (P_L[t] - Rs[t]) / 4)
 
 
 # Equiation 13: Nadir constraint without load damping using RotatedSecondOrderCone()
@@ -164,15 +165,15 @@ set_optimizer_attribute(model, "OutputFlag", 0)
 
 
 # Equation 19: Nadir constraint with load damping using RotatedSecondOrderCone()
-@variable(model, s >= 0)
-@variable(model, t >= 0)
+@variable(model, s_aux[1:T] >= 0)
+@variable(model, t_aux[1:T] >= 0)
 # x1*x2 >= x3^2 - x5*x4
 # x1*x2 = s^2
-@constraint(model, [x[1]/2, x[2], s] in RotatedSecondOrderCone())
+@constraint(model, [t in 1:T], [x[1, t]/2, x[2, t], s_aux[t]] in RotatedSecondOrderCone())
 # x5*x4 = t^2
-@constraint(model, [x[5]/2, x[2], t] in RotatedSecondOrderCone())
+@constraint(model, [t in 1:T], [x[5, t]/2, x[2, t], t_aux[t]] in RotatedSecondOrderCone())
 # s^2 >= x3^2 - t^2 -----> s^2 + t^2 >= x3^2
-@constraint(model,[s, t, x[3]] in RotatedSecondOrderCone())
+@constraint(model, [t in 1:T], [s_aux[t], t_aux[t], x[3, t]] in RotatedSecondOrderCone())
 
 
 clearTerminal()
@@ -184,29 +185,34 @@ optimize!(model)
 # clearTerminal()
 println("Capacidad = $(sum(Pg_Gen_ub[n] for n in 1:gTypes))")
 if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_SOLVED
-    println("\n\n##### $(termination_status(model)) solution found #####\n")
-
-    println("\nDemand = ", Pd, " MW")
-    println("Generated power = ", round(sum(value(Pg[i]) for i in 1:gTypes), digits = 3), " MW")
-    println("RES power supply = ", round(value(P_RES * cf_RES - P_curt), digits = 3), " MW")
-    println("RES accommodated = ", round(value(P_curt), digits = 2), " MW")
-    println("Demmand shedding = ", round(value(Dshed), digits = 2), " MW")
     
+    println("\n\n##### $(termination_status(model)) solution found #####")
 
-    # idx = cumsum([1; N[1:end-1]])
-    for i in 1:gTypes
+    for t in 1:T
+        println("\nDemand = ", Pd[t], " MW")
+
+        println("Generated power = ", round(sum(value(Pg[g, t]) for g in 1:gTypes), digits = 3), " MW")
+
+        println("RES power supply = ", round(value(P_RES * cf_RES[t] - P_curt[t]), digits = 3), " MW")
+        println("RES accommodated = ", round(value(P_curt[t]), digits = 2), " MW")
+        println("Demmand shedding = ", round(value(Dshed[t]), digits = 2), " MW")
+        
+
+        # idx = cumsum([1; N[1:end-1]])
+        for i in 1:gTypes
+            println("")
+            println("Number of generators of type $i = $(value(Ng[i, t]))")
+            println("Power supplied by gen. type $i  = $(round(value(Pg[i, t]), digits = 2)) MW")
+            println("PFR provision from gen units $i = $(round(value(Rg[i, t]), digits = 2)) MW")
+            println("Operation cost = $(round(value(Pg[i, t]) * Pg_cost[i] / 1000, digits = 2)) k€")
+        end
         println("")
-        println("Number of generators of type $i = $(round(value(Ng[i]), digits = 0))")
-        println("Power supplied by gen. type $i  = $(round(value(Pg[i]), digits = 2)) MW")
-        println("PFR provision from gen units $i = $(round(value(Rg[i]), digits = 2)) MW")
-        println("Operation cost = $(round(value(Pg[i]) * Pg_cost[i] / 1000, digits = 2)) k€")
+        println("Load infeed = ", round(value(P_L[t]), digits = 3), " MW")
+        println("")
+        println("Global PRF provision = $(round(sum(value(Rg[i, t]) for i in 1:gTypes), digits = 2)) MW")
+        cost_t = sum(value(Ng[g, t]) * Pg_nl_cost[g] + value(Pg[g, t]) * Pg_cost[g] for g in 1:gTypes) + VoLL * value(Dshed[t])
+        println("Total cost period $t = $(round(cost_t/1000, digits = 3)) k€")
     end
-    println("")
-    println("Load infeed = ", round(value(P_L), digits = 3), " MW")
-    println("")
-    println("Global PRF provision = $(round(sum(value(Rg[i]) for i in 1:gTypes), digits = 2)) MW")
-    println("Total cost = $(round(objective_value(model)/1000, digits = 3)) k€")
-
 else
     println("ERROR: ", termination_status(model))
 
