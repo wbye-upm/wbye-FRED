@@ -20,27 +20,29 @@ function clearTerminal()
     
 end
 
+# https://www.esios.ree.es/es/unidades-fisicas
 ########## Data ##########
-# Type            Nuclear |    Combined Cycle   |         Coal        |     Cogeneration    |       Fuel/Gas      |        Biomass
-N           = [         7,         6,        46,         3,         3,       300,       300,        40,        20,        10,         1 ] #        - Number of units
-C_m         = [        10,        90,        90,       100,       100,        58,        58,       150,       150,        90,        90 ] # €/MWh  - Marginal cost
-C_nl        = [         0,       800,      1000,      1000,      1500,       100,       150,       300,       800,       500,      1000 ] # €/h    - No-load cost
-Pg_Gen_lb   = [       950,        60,       120,       100,       350,         1,        10,        10,        30,        10,       100 ] # MW     - Power lower bound
-Pg_Gen_ub   = [      1020,       300,       450,       200,       450,        10,        50,        30,        50,        25,       100 ] # MW     - Power upper bound
-Pg_rr       = [       180,       600,      1200,       200,       550,        60,       120,        60,       150,        60,       250 ] # MW/h   - Maximum ramp rate for each generator of the cluster
-Hg          = [         8,         5,         5,         5,         5,         4,         4,         4,         4,         3,         4 ]# s      - Inertia constant
-T_st        = [      1000,         1,         2,        10,        10,         1,         1,         1,         1,         2,         4 ]# h      - Startup time
-T_mut       = [        24,         2,         2,         4,         6,         1,         1,         1,         1,         2,         4 ]# h      - Minimum up time
-T_mdt       = [        24,         1,         2,         2,         4,         1,         1,         1,         1,         2,         4 ]# h      - Minimum down time
+Types       = [ "Nuclear", "CC_1", "CC_2", "CC_3", "CC_4", "Carbón_1", "Carbón_2", "COGEN_1", "COGEN_2", "COGEN_3", "COGEN_4", "COGEN_5", "Fuel", "Derivados"]
+N           = [         7,      5,     33,     18,     20,          2,          1,        97,        58,        86,        31,        12,      2,          52] #        - Number of units
+C_m         = [        11,   47.5,   42.5,     55,   52.5,         39,         34,     107.5,      92.5,        85,      81.5,        70,    105,        97.5] # €/MWh  - Marginal cost
+C_nl        = [      22.5,      9,   12.5,     16,     19,         38,         45,       6.5,       8.5,        10,      12.5,        17,      9,          12] # €/h    - No-load cost
+Pg_Gen_lb   = [     457.5,   25.2,  120.2,  174.5,    187,        154,        256,      0.51,      1.61,      4.13,     10.32,     41.99,    1.8,         6.3] # MW     - Power lower bound
+Pg_Gen_ub   = [    1016.7,   55.9,  267.1,  387.7,  415.3,     343.95,        570,      1.14,      3.57,      9.18,     22.94,      91.1,   3.95,       13.96] # MW     - Power upper bound
+Pg_rr       = [      14.5,   22.5,   42.5,     60,     85,         75,      112.5,      12.5,        19,      28.5,      37.5,        50,     12,          21] # MW/h   - Maximum ramp rate for each generator of the cluster
+Hg          = [         9,      6,      6,      7,      7,          8,          8,         3,         3,         4,         5,         5,      5,           5] # s      - Inertia constant
+T_st        = [        48,      2,      2,      2,      2,         12,         15,         0,         0,         0,         1,         2,      1,           2] # h      - Startup time
+T_mut       = [        48,      4,      4,      4,      4,          6,          6,         2,         3,         3,         3,         4,      1,           2] # h      - Minimum up time
+T_mdt       = [        48,      4,      4,      4,      4,          6,          6,         2,         2,         2,         2,         2,      1,           1] # h      - Minimum down time
 
 Rg_max      = Pg_Gen_ub.*0.05   # MW    - FR provision
 Tg          = 8                 # s     - FR delivery time
 
+# https://demanda.ree.es/visiona/peninsula/demandaau/acumulada/2025-01-20
 # Hora:         00:00   01:00   02:00   03:00   04:00   05:00   06:00   07:00   08:00   09:00   10:00   11:00   12:00   13:00   14:00   15:00   16:00   17:00   18:00   19:00   20:00   21:00   22:00   23:00
 # Total of power demand
-Pd          = [ 32.19,  28.98,  26.33,  25.04,  24.29,  22.83,  21.35,  20.40,  19.99,  20.09,  20.49,  20.38,  20.53,  21.40,  22.74,  23.66,  24.38,  25.33,  24.95,  24.25,  24.27,  26.33,  28.43,  29.77] .*10^3 # MW
+Pd = [27.062, 24.434, 22.861, 22.076, 21.858, 22.104, 24.402, 29.278, 34.13, 36.113, 35.758, 35.066, 34.56, 34.924, 35.315, 35.564, 36.086, 36.699, 37.582, 38.378, 38.714, 38.521, 35.598, 31.529] .*10^3 # MW
 # Capacity factor of RES
-cf_RES      = [  6.97,   6.97,   7.08,   7.12,   6.68,   7.05,   6.81,   6.82,   6.99,   8.40,  12.94,  17.74,  19.66,  19.81,  19.85,  19.50,  18.66,  14.73,  10.06,  10.44,  10.69,   8.15,   6.82,   6.98] ./ 100
+cf_RES      = [12.264, 11.9488, 12.1419, 12.8872, 12.636, 12.3849, 12.6209, 12.2465, 12.0326, 12.5942, 14.1442, 14.9837, 14.8953, 15.3384, 14.4291, 13.0651, 11.4547, 10.093, 10.7326, 11.8674, 11.85, 11.6837, 11.264, 11.05] ./ 100
 
 # Power from Renewable Energy Source (RES)
 P_RES       = 86 *10^3 # MW (Max power installed)
@@ -71,16 +73,12 @@ D = 1.5 *10^-2 # %/Hz
 
 
 # Check if the length of all data are the same
-if (length(C_m) == length(C_nl) == length(Pg_Gen_lb) == length(Pg_Gen_ub) == length(Rg_max) == length(Hg))
-    gTypes = length(C_m)
-else
-    println("ERROR: Wrong data input\n")
-end
+gTypes = length(Types)
 
 
 ########## Model creation ##########
 model = Model(Gurobi.Optimizer)
-set_optimizer_attribute(model, "OutputFlag", 0)
+set_optimizer_attribute(model, "OutputFlag", 0) # Se silencian las salidas pro defecto del solver Gurobi
 
 
 ########## Variables ##########
@@ -215,8 +213,8 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
 
         println("Generated power = ", round(sum(value(Pg[g, t]) for g in 1:gTypes), digits = 3), " MW")
 
-        # println("RES power supply = ", round(value(P_RES * cf_RES[t] - P_curt[t]), digits = 3), " MW")
-        # println("RES accommodated = ", round(value(P_curt[t]), digits = 2), " MW")
+        println("RES power supply = ", round(value(P_RES * cf_RES[t] - P_curt[t]), digits = 3), " MW")
+        println("RES accommodated = ", round(value(P_curt[t]), digits = 2), " MW")
         # println("Demmand shedding = ", round(value(Dshed[t]), digits = 2), " MW")
         println("\nPeriod $t:")
         for g in 1:gTypes
@@ -245,10 +243,10 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
     Pg_values = [value(Pg[g, t]/1000) for g in 1:gTypes, t in 1:T]
     y = Array{Float64}(undef, gTypes, T)
     y[1, :] .= Pg_values[1, :]
-    plot(x, y[1, :], ylims=(0, maximum(Pd/1000)), fillrange=0, lw=0, label="Cluster 1", xlabel="Time [h]", ylabel="Power Output (MW)")
+    plot(x, y[1, :], ylims=(0, maximum(Pd/1000)), fillrange=0, lw=0, label=Type[1], xlabel="Time [h]", ylabel="Power Output (MW)")
     for g in 2:gTypes
         y[g, :] .= y[g-1, :] .+ Pg_values[g, :]
-        plot!(x, y[g, :], fillrange=y[g-1, :], lw=0, label="Cluster $g")
+        plot!(x, y[g, :], fillrange=y[g-1, :], lw=0, label=Type[g])
     end
     y_RES = [value(P_RES * cf_RES[t] - P_curt[t])/1000 for t in 1:T]
     plot!(x, y_RES + y[gTypes, :], fillrange=y[gTypes, :], lw=0, label="RES power")
