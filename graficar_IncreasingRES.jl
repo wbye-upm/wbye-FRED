@@ -40,20 +40,13 @@ Tg          = 8                 # s     - FR delivery time
 # https://demanda.ree.es/visiona/peninsula/demandaau/acumulada/2025-01-20
 # Hora:          00:00    01:00    02:00    03:00    04:00    05:00    06:00    07:00    08:00    09:00    10:00    11:00    12:00    13:00    14:00    15:00    16:00    17:00    18:00    19:00    20:00    21:00    22:00    23:00
 # Total of power demand
-Pd          = [ 30042,  27973,  26288,  25344,  25223,  25751,  28182,  34083,  38610,  39069,  38376,  37265,  36012,  35295,  35290,  34289,  34983,  35695,  38237,  40625,  42144,  42035,  38290,  34179] # MW
-# Pd          = [ 35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000,  35000].*(25/35) # MW 
+Pd          = [ 15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000,  15000] # MW 
 # Power exportation
-P_extern    = [  -730,   -364,   -279,    266,    622,   -323,  -1714,   -858,    226,   -492,  -2178,  -4494,  -4833,  -5175,  -5335,  -5862,  -6213,  -5098,  -3011,  -2538,  -2383,  -2840,  -3939,  -4971] # MW
-# P_extern    = [     0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0]
+P_extern    = [     0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0]
 # Capacity factor of RES
-cf_RES      = [11.694, 11.340, 10.160,  9.449,  8.701,  8.874, 10.256, 12.083, 13.416, 15.781, 22.351, 27.494, 28.900, 29.133, 29.503, 30.594, 30.308, 25.873, 22.033, 22.490, 23.513, 24.200, 24.049, 23.598] ./ 100
-# cf_RES      = [     0,      1,      2,      3,      4,      5,      6,      7,      8,      9,     10,     11,     12,     13,     14,     15,     16,     17,     18,     19,    20,    21,    22,    23]./ 50
-# cf_RES      = [    10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10,     10]./ 10
-# Fix P_L
-# P_L_fixed   = [   500,    550,    600,    650,    700,    750,    800,    850,    900,    950,   1000,   1050,   1100,   1150,   1200,   1250,   1300,   1350,   1400,   1450,   1500,    1550,   1600,   1650]
-
+cf_RES      = [     0,      1,      2,      3,      4,      5,      6,      7,      8,      9,     10,     11,     12,     13,     14,     15,     16,     17,     18,     19,     20,     21,     22,     23] ./ 200
 # Power from Renewable Energy Source (RES)
-P_RES       = 80 *10^3 # MW (Max power installed)
+P_RES       = 86 *10^3 # MW (Max power installed)
 
 Rs_ub       = 0 # MW (EFR)
 Ts          = 1 # s
@@ -79,6 +72,7 @@ H_l = Hg[argmax(Pg_Gen_ub)]
 # Load damping
 D = 1.5 *10^-2 # %/Hz
 
+
 # Check if the length of all data are the same
 nTypes = length(gTypes)
 
@@ -93,7 +87,7 @@ set_optimizer_attribute(model, "MIPFocus", 1)       # Prioriza encontrar factibl
 set_optimizer_attribute(model, "Heuristics", 0.2)
 set_optimizer_attribute(model, "Presolve", 2)       # Agresivo
 set_optimizer_attribute(model, "NumericFocus", 1)   # Robustez numérico
-# set_optimizer_attribute(model, "NonConvex", 2)
+set_optimizer_attribute(model, "NonConvex", 2)
 
 
 ########## Variables ##########
@@ -127,9 +121,6 @@ set_optimizer_attribute(model, "NumericFocus", 1)   # Robustez numérico
 @constraint(model, [g in 1:nTypes, t in 1:T], Pg[g, t] <= Pg_Gen_ub[g] * Ng[g, t])
 
 # Largest power infeed constraints
-# @constraint(model, [t in 1:T], P_L[t] <= P_L_max)
-# @constraint(model, [t in 1:T], P_L[t] == P_L_fixed[t])
-# @constraint(model, [t in 1:T], P_L[t] == Pg_Gen_ub[1])
 @constraint(model, [g in 1:nTypes, t in 1:T], P_L[t] * Ng[g, t] >= Pg[g, t])
 
 # PFR provision from g constraints
@@ -163,64 +154,36 @@ if (CaseStudy == 3) || (CaseStudy == 4)
     @constraint(model, [t in 1:T], x[5, t] == (P_L[t] - Rs[t]) / 4)
 end
 
-# Nadir constraint without load damping
-# @constraint(model, [t in 1:T], (H[t] / f_0 - Rs[t] * Ts / (4*Δf_max)) * sum(Rg[g, t] for g in 1:nTypes) >= (P_L[t] - Rs[t])^2 * Tg / (4*Δf_max))
 if CaseStudy == 3
+    # Nadir constraint without load damping
+    # @constraint(model, [t in 1:T], (H[t] / f_0 - Rs[t] * Ts / (4*Δf_max)) * sum(Rg[g, t] for g in 1:nTypes) >= (P_L[t] - Rs[t])^2 * Tg / (4*Δf_max))
+    
     # Nadir constraint without load damping using RotatedSecondOrderCone()
     # x1*x2 >= x3^2
     @constraint(model, [t in 1:T], [x[1,t]/2, x[2,t], x[3,t]] in RotatedSecondOrderCone())
 end
 
-# Nadir constraint with load damping
-# @constraint(model, [t in 1:T], (H[t] / f_0 - Rs[t] * Ts / (4*Δf_max)) * sum(Rg[g, t] for g in 1:nTypes) >= (P_L[t] - Rs[t])^2 * Tg / (4*Δf_max) - (P_L[t] - Rs[t]) * Tg * D * Pd[t] / 4)
+
 if CaseStudy == 4
+    # Nadir constraint with load damping
+    # @constraint(model, [t in 1:T], (H[t] / f_0 - Rs[t] * Ts / (4*Δf_max)) * sum(Rg[g, t] for g in 1:nTypes) >= (P_L[t] - Rs[t])^2 * Tg / (4*Δf_max) - (P_L[t] - Rs[t]) * Tg * D * Pd[t] / 4)
     # Nadir constraint with load damping using RotatedSecondOrderCone()
     @variable(model, s_aux[1:T] >= 0)
-    @variable(model, r_aux[1:T] >= 0)
+    @variable(model, t_aux[1:T] >= 0)
     # x1*x2 >= x3^2 - x5*x4
     # x1*x2 = s^2
     @constraint(model, [t in 1:T], [x[1, t]/2, x[2, t], s_aux[t]] in RotatedSecondOrderCone())
     # x5*x4 = t^2
-    @constraint(model, [t in 1:T], [x[5, t]/2, x[4, t], r_aux[t]] in RotatedSecondOrderCone())
+    @constraint(model, [t in 1:T], [x[5, t]/2, x[4, t], t_aux[t]] in RotatedSecondOrderCone())
     # s^2 >= x3^2 - t^2 -----> s^2 + t^2 >= x3^2
     @variable(model, y_aux[1:T] >= 0)
     @variable(model, z_aux[1:T] >= 0)
-    # y_aux[t] ≥ s_aux[t]^2  ⇔  (y_aux[t], 1/2, s_aux[t])
+    # y[t] ≥ s_aux[t]^2  ⇔  (y[t], 1/2, s_aux[t])
     @constraint(model, [t in 1:T], [y_aux[t], 0.5, s_aux[t]] in RotatedSecondOrderCone())
-    # z_aux[t] ≥ r_aux[t]^2  ⇔  (z_aux[t], 1/2, r_aux[t])
-    @constraint(model, [t in 1:T], [z_aux[t], 0.5, r_aux[t]] in RotatedSecondOrderCone())
-    # y_aux[t] + z_aux[t] ≥ x[3,t]^2  ⇔  ((y_aux[t] + z_aux[t]), 1/2, x[3,t])
+    # z[t] ≥ t_aux[t]^2  ⇔  (z[t], 1/2, t_aux[t])
+    @constraint(model, [t in 1:T], [z_aux[t], 0.5, t_aux[t]] in RotatedSecondOrderCone())
+    # y[t] + z[t] ≥ x[3,t]^2  ⇔  ((y[t] + z[t]), 1/2, x[3,t])
     @constraint(model, [t in 1:T], [(y_aux[t] + z_aux[t]), 0.5, x[3,t]] in RotatedSecondOrderCone())
-end
-
-if CaseStudy != 1
-    # Number of generators of each cluster variation (t>=2)
-    @constraint(model, [g in 1:nTypes, t in 2:T], Ng[g,t] - Ng[g,t-1] == Ng_sg[g,t] - Ng_sd[g,t])
-    for t in 1:T
-        if t > 1
-            # Ramp limits constraints
-            @constraint(model, [g in 1:nTypes], -Pg_Gen_lb[g] * Ng_sd[g, t] - Pg_rr[g] * (Ng[g, t] - Ng_sg[g, t]) <= Pg[g, t] - Pg[g, t-1])
-            @constraint(model, [g in 1:nTypes], Pg[g, t] - Pg[g, t-1] <= Pg_rr[g] * (Ng[g, t] - Ng_sg[g, t]) + Pg_Gen_lb[g] * Ng_sg[g, t])
-        end
-        for g in 1:nTypes
-            # Start generating after startup
-            if t > T_st[g]
-                @constraint(model, Ng_sg[g, t] == Ng_st[g, t - T_st[g]])
-            end
-            # Minimum down time constraint
-            if (t > T_mdt[g] && T_mdt[g] > 0) || (t > T_mdt[g]+1 && T_mdt[g] == 0)
-                @constraint(model, Ng_st[g, t] <= N[g] - Ng[g, t-1] - sum(Ng_sd[g, i] for i in t-T_mdt[g]:t))
-            elseif t-T_mdt[g] < 1
-                @constraint(model, Ng_st[g, t] == 0)
-            end
-            # Minimun up time constraint
-            if (t > T_mut[g] && T_mut[g] > 0) || (t > T_mut[g]+1 && T_mut[g] == 0)
-                @constraint(model, Ng_sd[g, t] <= Ng[g, t-1] - sum(Ng_sg[g, i] for i in t-T_mut[g]:t-1))
-            elseif t-T_mut[g] < 1
-                @constraint(model, Ng_sd[g, t] == 0)
-            end
-        end
-    end
 end
 
 clearTerminal()
@@ -234,54 +197,10 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
     
     println("\n\n##### $(termination_status(model)) solution found #####")
 
-    cost_t = []
-    for t in 1:T
-        # println("\nPeriod $t:")
-        # println("\nDemand = ", Pd[t], " MW")
-        # println("Generated power = ", round(sum(value(Pg[g, t]) for g in 1:nTypes), digits = 3), " MW")
+    Rg_values = [round(sum(value(Rg[g, t]) for g in 1:nTypes), digits=2) for t in 1:T]
 
-        # println("RES power supply = ", round(value(P_RES * cf_RES[t] - P_curt[t]), digits = 3), " MW")
-        # println("RES accommodated = ", round(value(P_curt[t]), digits = 2), " MW")
-        # println("Demmand shedding = ", round(value(Dshed[t]), digits = 2), " MW")
-        # println("Power loss = $(round(value(P_L[t]), digits = 2))")
-        
-        for g in 1:nTypes
-            # println("")
-            # println("Number of generators of type $g = $(value(Ng[g, t]))")
-            # println("Power supplied by gen. type $g  = $(round(value(Pg[g, t]), digits = 2)) MW")
-            # println("Power supplied by each gen per type $g  = $(round(value(Pg[g, t] / Ng[g, t]), digits = 2)) MW")
-            # println("PFR provision from gen units $g = $(round(value(Rg[g, t]), digits = 2)) MW")
-            # println("Operation cost = $(round(value(Pg[g, t]) * C_m[g] / 1000, digits = 2)) k€")
-            # println("Ng_st = $(value(Ng_st[g, t]))")
-            # println("Ng_sg = $(value(Ng_sg[g, t]))")
-            # println("Ng_sd = $(value(Ng_sd[g, t]))")
-        end
-        # println("")
-        # println("Load infeed = ", round(value(P_L[t]), digits = 3), " MW")
-        # println("")
-        # println("Global PRF provision = $(round(sum(value(Rg[g, t]) for g in 1:nTypes), digits = 2)) MW")
-        
-        # push!(cost_t, round((sum(value(Ng[g, t]) * C_nl[g] + value(Pg[g, t]) * C_m[g] for g in 1:nTypes) + VoLL * value(Dshed[t]))/1000, digits = 2))
-        # cost_t = sum(value(Ng[g, t]) * C_nl[g] + value(Pg[g, t]) * C_m[g] for g in 1:nTypes) + VoLL * value(Dshed[t])
-        # println("Total cost period $t = $(cost_t[t]) k€")
+    println("Rg values = ", Rg_values, " GW")
 
-        # println("Δfss = ", value((Rs[t] + sum(Rg[g, t] for g in 1:nTypes) - P_L[t]) / (D * Pd[t])))
-    end
-
-    # for g in 1:nTypes
-    #     # println("Tipo $g: ", [value(Ng[g,t]) for t in 1:T])
-    #     println("Tipo $g: ", round(sum(value(Pg[g,t]) for t in 1:T), digits = 2), " MW")
-    # end
-
-    cost_list = [round.((sum(value(Ng[g, t]) * C_nl[g] + value(Pg[g, t]) * C_m[g] for g in 1:nTypes) + VoLL * value(Dshed[t]))/1000, digits = 2) for t in 1:T]
-
-    println(cost_list)
-
-    # PRF_values = [round(sum(value(Rg[g, t]) for g in 1:nTypes), digits=2) for t in 1:T]
-
-    # println("Global PRF provision = ", PRF_values, " GW")
-
-    println(cost_t)
     ########## Solution plotting ##########
     if fShowPlot
         plotColors = Dict(
@@ -318,21 +237,19 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
             size=(1200, 700),
             dpi=160,
             legend=:outerright,
-            # right_margin=16mm,
             left_margin=10mm,
             bottom_margin=10mm,
-            xticks=0:2:maximum(x),
-            yticks=(5*floor((minimum(P_extern)/1000)/5)):5:maximum(Pd/1000),
-            ylims=(minimum(P_extern/1000), maximum((Pd-P_extern)/1000)),
-            # yticks=(5*floor((minimum(-P_curt_values))/5)):5:maximum(Pd/1000),
-            # ylims=(minimum(-P_curt_values), maximum((Pd-P_extern)/1000)),
+            xticks=(x, round.(Int, cf_RES*P_RES)),
+            xrotation=45,
+            yticks=[(5*floor((minimum(-P_curt_values))/5)):5:maximum(Pd/1000); 20],
+            ylims=(minimum(-P_curt_values), maximum((Pd-P_extern)/1000) + 0.2),
             fillrange=0,
             lw=0.5,
             linecolor=plotColors[gTypes[1]],
             label=gTypes[1],
             color=plotColors[gTypes[1]],
-            xlabel="Time [h]",
-            ylabel="Power (GW)")
+            xlabel="Potencia de fuentes renovables (MW)",
+            ylabel="Demanda (GW)")
 
         for g in 2:nTypes
             y[g, :] .= y[g-1, :] .+ Pg_values[g, :]
@@ -342,10 +259,8 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
         plot!(x, y_RES + y[nTypes, :], fillrange=y[nTypes, :], lw=0, label="RES power", color="green")
         plot!(x, Pd/1000, label="Demand", color="red", lw=3)
         plot!(x, P_extern/1000, label="Import&Export", fillrange=0)
-        # plot!(x, -P_curt_values, label="P_curt", fillrange=0)
-        plot!(legend=false)
+        plot!(x, -P_curt_values, label="P_curt", fillrange=0)
 
-        # plot(x, Pd/1000, label="Demand", color="red", lw=3, ylims=(0, 44),xticks=0:2:maximum(x), xlabel="Time [h]", ylabel="Power (GW)")
         display(current())
     end
     println(solve_time(model))
