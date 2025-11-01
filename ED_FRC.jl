@@ -116,6 +116,7 @@ set_optimizer_attribute(model, "NumericFocus", 1)   # Robustez numérico
 @expression(model, H[t=1:T], sum(Hg[g] * Pg_Gen_ub[g] * Ng[g, t] for g in 1:nTypes) - P_L[t] * H_l)
 
 ########## Constraints ##########
+# Power balance
 @constraint(model, [t in 1:T], sum(Pg[g, t] for g in 1:nTypes) + P_RES * cf_RES[t] - P_curt[t] + P_extern[t] == Pd[t] - Dshed[t])
 
 # Number of active generators of each group constraint
@@ -151,7 +152,7 @@ if (CaseStudy == 3) || (CaseStudy == 4)
 
 
     # RotatedSecondOrderCone()
-    # 2x₁x₂ ≥ ∣∣x₃₋ₙ∣∣²
+    # 2x₁x₂ ≥ ∣∣x₃₋ₙ∣∣₂ 
     # @constraint(model, [x₁, x₂, x₃, ..., xₙ] in RotatedSecondOrderCone())
 
     # Auxiliar variables
@@ -164,33 +165,33 @@ if (CaseStudy == 3) || (CaseStudy == 4)
 end
 
 # Nadir constraint without load damping
-# @constraint(model, [t in 1:T], (H[t] / f_0 - Rs[t] * Ts / (4*Δf_max)) * sum(Rg[g, t] for g in 1:nTypes) >= (P_L[t] - Rs[t])^2 * Tg / (4*Δf_max))
 if CaseStudy == 3
+    @constraint(model, [t in 1:T], (H[t] / f_0 - Rs[t] * Ts / (4*Δf_max)) * sum(Rg[g, t] for g in 1:nTypes) >= (P_L[t] - Rs[t])^2 * Tg / (4*Δf_max))
     # Nadir constraint without load damping using RotatedSecondOrderCone()
     # x1*x2 >= x3^2
-    @constraint(model, [t in 1:T], [x[1,t]/2, x[2,t], x[3,t]] in RotatedSecondOrderCone())
+    # @constraint(model, [t in 1:T], [x[1,t]/2, x[2,t], x[3,t]] in RotatedSecondOrderCone())
 end
 
 # Nadir constraint with load damping
-# @constraint(model, [t in 1:T], (H[t] / f_0 - Rs[t] * Ts / (4*Δf_max)) * sum(Rg[g, t] for g in 1:nTypes) >= (P_L[t] - Rs[t])^2 * Tg / (4*Δf_max) - (P_L[t] - Rs[t]) * Tg * D * Pd[t] / 4)
 if CaseStudy == 4
+    @constraint(model, [t in 1:T], (H[t] / f_0 - Rs[t] * Ts / (4*Δf_max)) * sum(Rg[g, t] for g in 1:nTypes) >= (P_L[t] - Rs[t])^2 * Tg / (4*Δf_max) - (P_L[t] - Rs[t]) * Tg * D * Pd[t] / 4)
     # Nadir constraint with load damping using RotatedSecondOrderCone()
-    @variable(model, s_aux[1:T] >= 0)
-    @variable(model, r_aux[1:T] >= 0)
-    # x1*x2 >= x3^2 - x5*x4
-    # x1*x2 = s^2
-    @constraint(model, [t in 1:T], [x[1, t]/2, x[2, t], s_aux[t]] in RotatedSecondOrderCone())
-    # x5*x4 = t^2
-    @constraint(model, [t in 1:T], [x[5, t]/2, x[4, t], r_aux[t]] in RotatedSecondOrderCone())
-    # s^2 >= x3^2 - t^2 -----> s^2 + t^2 >= x3^2
-    @variable(model, y_aux[1:T] >= 0)
-    @variable(model, z_aux[1:T] >= 0)
-    # y_aux[t] ≥ s_aux[t]^2  ⇔  (y_aux[t], 1/2, s_aux[t])
-    @constraint(model, [t in 1:T], [y_aux[t], 0.5, s_aux[t]] in RotatedSecondOrderCone())
-    # z_aux[t] ≥ r_aux[t]^2  ⇔  (z_aux[t], 1/2, r_aux[t])
-    @constraint(model, [t in 1:T], [z_aux[t], 0.5, r_aux[t]] in RotatedSecondOrderCone())
-    # y_aux[t] + z_aux[t] ≥ x[3,t]^2  ⇔  ((y_aux[t] + z_aux[t]), 1/2, x[3,t])
-    @constraint(model, [t in 1:T], [(y_aux[t] + z_aux[t]), 0.5, x[3,t]] in RotatedSecondOrderCone())
+    # @variable(model, s_aux[1:T] >= 0)
+    # @variable(model, r_aux[1:T] >= 0)
+    # # x1*x2 >= x3^2 - x5*x4
+    # # x1*x2 = s_aux^2
+    # @constraint(model, [t in 1:T], [x[1, t]/2, x[2, t], s_aux[t]] in RotatedSecondOrderCone())
+    # # x5*x4 = r_aux^2
+    # @constraint(model, [t in 1:T], [x[5, t]/2, x[4, t], r_aux[t]] in RotatedSecondOrderCone())
+    # # s^2 >= x3^2 - t^2 -----> s^2 + t^2 >= x3^2
+    # @variable(model, y_aux[1:T] >= 0)
+    # @variable(model, z_aux[1:T] >= 0)
+    # # y_aux[t] ≥ s_aux[t]^2  ⇔  (y_aux[t], 1/2, s_aux[t])
+    # @constraint(model, [t in 1:T], [y_aux[t], 0.5, s_aux[t]] in RotatedSecondOrderCone())
+    # # z_aux[t] ≥ r_aux[t]^2  ⇔  (z_aux[t], 1/2, r_aux[t])
+    # @constraint(model, [t in 1:T], [z_aux[t], 0.5, r_aux[t]] in RotatedSecondOrderCone())
+    # # y_aux[t] + z_aux[t] ≥ x[3,t]^2  ⇔  ((y_aux[t] + z_aux[t]), 1/2, x[3,t])
+    # @constraint(model, [t in 1:T], [(y_aux[t] + z_aux[t]), 0.5, x[3,t]] in RotatedSecondOrderCone())
 end
 
 if CaseStudy != 1
@@ -261,11 +262,12 @@ if termination_status(model) == OPTIMAL || termination_status(model) == LOCALLY_
         # println("")
         # println("Global PRF provision = $(round(sum(value(Rg[g, t]) for g in 1:nTypes), digits = 2)) MW")
         
-        # push!(cost_t, round((sum(value(Ng[g, t]) * C_nl[g] + value(Pg[g, t]) * C_m[g] for g in 1:nTypes) + VoLL * value(Dshed[t]))/1000, digits = 2))
+        push!(cost_t, round((sum(value(Ng[g, t]) * C_nl[g] + value(Pg[g, t]) * C_m[g] for g in 1:nTypes) + VoLL * value(Dshed[t]))/1000, digits = 2))
         # cost_t = sum(value(Ng[g, t]) * C_nl[g] + value(Pg[g, t]) * C_m[g] for g in 1:nTypes) + VoLL * value(Dshed[t])
-        # println("Total cost period $t = $(cost_t[t]) k€")
+        println("$(cost_t[t])")
 
         # println("Δfss = ", value((Rs[t] + sum(Rg[g, t] for g in 1:nTypes) - P_L[t]) / (D * Pd[t])))
+        # println("RoCoF = ", value(P_L[t] * f_0 / (2 * H[t])))
     end
 
     # for g in 1:nTypes
